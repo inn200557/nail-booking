@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>美甲预约</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #f7f8fa; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
+    .page { padding: 16px; }
+    .header { text-align: center; padding: 24px 0; }
+    .header h1 { font-size: 28px; }
+    .header p { color: #666; margin-top: 8px; }
+    .section { background: white; border-radius: 12px; margin: 12px 0; }
+    .section-title { padding: 12px 16px; font-weight: bold; border-bottom: 1px solid #eee; }
+    .tech-list { display: flex; gap: 10px; padding: 16px; }
+    .tech-card { flex: 1; text-align: center; padding: 16px 8px; border-radius: 8px; border: 2px solid #eee; }
+    .tech-card.active { border-color: #1989fa; background: #e8f4ff; }
+    .time-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; padding: 16px; }
+    .time-slot { text-align: center; padding: 12px 0; border-radius: 6px; cursor: pointer; }
+    .time-slot.available { background: #e8ffe8; }
+    .time-slot.booked { background: #ffe8e8; color: #999; }
+    .time-slot.selected { background: #1989fa; color: white; }
+    .legend { text-align: center; padding: 8px; font-size: 12px; color: #666; }
+    .form { padding: 16px; }
+    .form-item { margin-bottom: 12px; }
+    .form-item label { display: block; font-size: 14px; margin-bottom: 6px; }
+    .form-item input, .form-item select, .form-item textarea { 
+      width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px;
+    }
+    .submit-btn button { width: 100%; padding: 14px; background: #1989fa; color: white; border: none; border-radius: 8px; font-size: 16px; }
+    .modal { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; }
+    .modal-content { background: white; padding: 32px; border-radius: 12px; text-align: center; min-width: 280px; }
+    .tabs { display: flex; background: white; }
+    .tab { flex: 1; padding: 14px; text-align: center; border-bottom: 2px solid transparent; }
+    .tab.active { color: #1989fa; border-bottom-color: #1989fa; }
+    .stat { display: flex; gap: 12px; padding: 16px; }
+    .stat-item { flex: 1; text-align: center; padding: 16px; background: white; border-radius: 8px; }
+    .stat-num { font-size: 28px; font-weight: bold; color: #1989fa; }
+    .stat-label { font-size: 12px; color: #666; }
+    .card { background: white; border-radius: 8px; padding: 16px; margin: 12px; }
+    .card-header { display: flex; justify-content: space-between; }
+    .status { font-size: 12px; padding: 2px 8px; border-radius: 10px; }
+    .status-pending { background: #fff3e0; color: #f57c00; }
+    .status-done { background: #e8f5e9; color: #4caf50; }
+  </style>
+</head>
+<body>
+<div id="app">
+  <!-- 顾客端 -->
+  <div v-if="!isAdmin" class="page">
+    <div class="header"><h1>💅 美甲预约</h1><p>选择时间，轻松预约</p></div>
+    
+    <div class="section">
+      <div class="section-title">选择美甲师</div>
+      <div class="tech-list">
+        <div v-for="t in techs" :key="t.id" :class="['tech-card', {active: tech===t.id}]" @click="tech=t.id;load()">
+          <div style="font-size:28px">💅</div><div style="margin-top:8px">{{t.name}}</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">选择日期</div>
+      <div class="form"><input type="date" v-model="date" :min="minD" :max="maxD" @change="load()"></div>
+    </div>
+
+    <div class="section" v-if="tech && date">
+      <div class="section-title">选择时间段</div>
+      <div class="time-grid">
+        <div v-for="s in slots" :key="s.t" :class="['time-slot', s.b?'booked':'available', {selected: time===s.t}]" @click="!s.b && (time=s.t)">{{s.t}}</div>
+      </div>
+      <div class="legend">🟢 可预约 🔴 已预约</div>
+    </div>
+
+    <div class="section" v-if="time">
+      <div class="section-title">填写信息</div>
+      <div class="form">
+        <div class="form-item"><label>姓名</label><input v-model="fm.name" placeholder="请输入姓名"></div>
+        <div class="form-item"><label>电话</label><input v-model="fm.phone" placeholder="手机号" maxlength="11"></div>
+        <div class="form-item"><label>项目</label>
+          <select v-model="fm.svc"><option value="">请选择</option><option v-for="s in svcs">{{s}}</option></select>
+        </div>
+        <div class="form-item"><label>备注</label><textarea v-model="fm.note" placeholder="选填" rows="2"></textarea></div>
+      </div>
+    </div>
+
+    <div class="submit-btn" v-if="time" style="padding:16px">
+      <button @click="submit()" :disabled="!fm.name||!fm.phone||!fm.svc">提交预约</button>
+    </div>
+
+    <div style="text-align:center;margin-top:24px">
+      <a href="#" @click.prevent="showLogin=true" style="color:#999;font-size:12px">管理员入口</a>
+    </div>
+
+    <div class="modal" v-if="showLogin" @click.self="showLogin=false">
+      <div class="modal-content">
+        <h3 style="margin-bottom:16px">管理员登录</h3>
+        <input type="password" v-model="pwd" placeholder="密码" @keyup.enter="login()" style="width:100%;padding:10px;border:1px solid #ddd;border-radius:6px">
+        <button @click="login()" style="width:100%;margin-top:16px;padding:12px;background:#1989fa;color:white;border:none;border-radius:6px">登录</button>
+        <p v-if="loginErr" style="color:red;margin-top:12px">密码错误</p>
+      </div>
+    </div>
+
+    <div class="modal" v-if="ok">
+      <div class="modal-content">
+        <h2 style="color:#07c160">✅ 预约成功</h2>
+        <p style="color:#666;margin:12px 0 20px">请按时到店</p>
+        <button @click="ok=false;time=null;fm={name:'',phone:'',svc:'',note:''}" style="padding:10px 32px;background:#1989fa;color:white;border:none;border-radius:6px">确定</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 管理后台 -->
+  <div v-if="isAdmin">
+    <div class="tabs">
+      <div :class="['tab', {active: tab==='today'}]" @click="tab='today'">今日预约</div>
+      <div :class="['tab', {active: tab==='all'}]" @click="tab='all'">全部预约</div>
+    </div>
+    <div class="stat">
+      <div class="stat-item"><div class="stat-num">{{today.length}}</div><div class="stat-label">今日预约</div></div>
+      <div class="stat-item"><div class="stat-num">{{pending}}</div><div class="stat-label">待服务</div></div>
+    </div>
+    <div class="card" v-for="a in showList" :key="a.id">
+      <div class="card-header">
+        <span style="font-weight:bold">{{a.date}} {{a.time}}</span>
+        <span :class="['status', a.status==='completed'?'status-done':'status-pending']">{{a.status==='completed'?'已完成':'待服务'}}</span>
+      </div>
+      <p style="margin:8px 0;color:#666"><strong>{{a.name}}</strong> {{a.phone.slice(0,3)+'****'+a.phone.slice(-4)}}</p>
+      <p style="color:#666">项目：{{a.svc}}</p>
+      <p v-if="a.note" style="color:#666">备注：{{a.note}}</p>
+      <div style="margin-top:12px;display:flex;gap:8px">
+        <button v-if="a.status!=='completed'" @click="done(a)" style="padding:8px 16px;border:1px solid #ddd;background:white;border-radius:6px">完成</button>
+        <button @click="del(a)" style="padding:8px 16px;border:1px solid #f44;color:#f44;background:white;border-radius:6px">删除</button>
+      </div>
+    </div>
+    <div v-if="showList.length===0" style="text-align:center;padding:40px;color:#999">暂无预约</div>
+    <div style="text-align:center;padding:20px">
+      <button @click="isAdmin=false" style="padding:10px 32px;border:1px solid #ddd;background:white;border-radius:6px">退出</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/vue@3/dist/vue.global.prod.js"></script>
+<script>
+const {createApp,ref,computed,onMounted}=Vue
+const URL='https://pannlnwagxnlxjxrikuq.supabase.co'
+const KEY='sb_publishable_4uB0tj8W3V2PgIqjwp3kZA_d87GYwsb'
+
+createApp({
+  setup(){
+    const techs=ref([{id:'1',name:'美甲师A'},{id:'2',name:'美甲师B'},{id:'3',name:'美甲师C'}])
+    const svcs=ref(['基础美甲','美甲+美足','款式设计','卸甲+护理'])
+    const tech=ref('1'), date=ref(new Date().toISOString().slice(0,10)), time=ref(null)
+    const booked=ref([]), fm=ref({name:'',phone:'',svc:'',note:''}), ok=ref(false)
+    const showLogin=ref(false), pwd=ref(''), loginErr=ref(false), isAdmin=ref(false), tab=ref('today')
+    const list=ref([])
+    const minD=new Date().toISOString().slice(0,10)
+    const maxD=new Date(Date.now()+7*24*60*60*1000).toISOString().slice(0,10)
+
+    const slots=computed(()=>{
+      const arr=[]
+      for(let h=10;h<=20;h++){
+        arr.push({t:`${h}:00`,b:booked.value.includes(`${h}:00`)})
+        if(h<20)arr.push({t:`${h}:30`,b:booked.value.includes(`${h}:30`)})
+      }
+      return arr
+    })
+
+    const today=new Date().toISOString().slice(0,10)
+    const todayList=computed(()=>list.value.filter(a=>a.date===today))
+    const pending=computed(()=>todayList.value.filter(a=>a.status!=='completed').length)
+    const showList=computed(()=>tab.value==='today'?todayList.value:list.value)
+
+    async function load(){
+      if(!tech.value||!date.value)return
+      const r=await fetch(`${URL}/rest/v1/appointments?select=appointment_time&technician_id=eq.${tech.value}&appointment_date=eq.${date.value}`,{headers:{apikey:KEY}})
+      const d=await r.json()
+      booked.value=d.map(a=>a.appointment_time.slice(0,5))
+    }
+
+    async function submit
